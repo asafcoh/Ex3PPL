@@ -16,17 +16,19 @@ T5 = [T3 -> T4]
 
 (a) True – valid function chaining
 
-(b) False – mismatched argument: f expects T2 but gets T1
+(b) False – False – the argument type mismatches the function's input type: f expects an argument of type T2, but x is of type T1. Therefore, unless T1 = T2, this typing judgment is invalid. Since we have no guarantee that T1 = T2, the expression is not well-typed.
+
 
 ---
 
 To construct a chain of type variables of length 5, where each variable points to the next via its content field (boxed), we create the following:
 
-let tvar5 = makeTVar("TVar5");
-let tvar4 = makeTVar("TVar4", makeBox(tvar5));
-let tvar3 = makeTVar("TVar3", makeBox(tvar4));
-let tvar2 = makeTVar("TVar2", makeBox(tvar3));
-let tvar1 = makeTVar("TVar1", makeBox(tvar2));
+Let f: () → number  
+Let g: (f) → f  
+Let h: (g) → g  
+Let i: (h) → h  
+Let j: (i) → i  
+
 
 This results in the desired chain:  
-TVar1 -> TVar2 -> TVar3 -> TVar4 -> TVar5
+j -> i -> h -> g -> f -> f(number)
