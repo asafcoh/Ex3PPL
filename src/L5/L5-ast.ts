@@ -90,7 +90,6 @@ export type DefineExp = {tag: "DefineExp"; var: VarDecl; val: CExp; }
 export const makeDefineExp = (v: VarDecl, val: CExp): DefineExp =>
     ({tag: "DefineExp", var: v, val: val});
 export const isDefineExp = (x: any): x is DefineExp => x.tag === "DefineExp";
-
 export type NumExp = {tag: "NumExp"; val: number; }
 export const makeNumExp = (n: number): NumExp => ({tag: "NumExp", val: n});
 export const isNumExp = (x: any): x is NumExp => x.tag === "NumExp";
@@ -153,6 +152,13 @@ export type SetExp = {tag: "SetExp"; var: VarRef; val: CExp; }
 export const makeSetExp = (v: VarRef, val: CExp): SetExp =>
     ({tag: "SetExp", var: v, val: val});
 export const isSetExp = (x: any): x is SetExp => x.tag === "SetExp";
+
+
+export const isPairExp = (exp: CExp): exp is AppExp =>
+    isAppExp(exp) && isPrimOp(exp.rator) && exp.rator.op === 'cons';
+
+
+
 
 // To help parser - define a type for reserved key words.
 export type SpecialFormKeyword = "lambda" | "let" | "letrec" | "if" | "set!" | "quote";

@@ -137,6 +137,13 @@ export const makeEquationsFromExp = (exp: A.Exp, pool: Pool): Opt.Optional<Equat
                             Opt.mapv(Res.resultToOptional(TC.typeofPrim(exp)), (right: T.TExp) =>
                                 [makeEquation(left, right)])) :
     // Todo: define, let, letrec, set 
+    A.isLitExp(exp) ? Opt.bind(inPool(pool, exp), (left: T.TExp) =>
+        Opt.mapv(
+            Res.resultToOptional<T.TExp>(TC.typeofLitExp(exp)),
+            (right: T.TExp) => [makeEquation(left, right)]
+        )
+    ) :
+
     Opt.makeNone();
 
 

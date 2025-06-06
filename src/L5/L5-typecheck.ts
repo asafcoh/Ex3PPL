@@ -4,15 +4,17 @@ import { equals, map, zipWith } from 'ramda';
 import { isAppExp, isBoolExp, isDefineExp, isIfExp, isLetrecExp, isLetExp, isNumExp,
          isPrimOp, isProcExp, isProgram, isStrExp, isVarRef, parseL5Exp, unparse,
          AppExp, BoolExp, DefineExp, Exp, IfExp, LetrecExp, LetExp, NumExp,
-         Parsed, PrimOp, ProcExp, Program, StrExp } from "./L5-ast";
+         Parsed, PrimOp, ProcExp, Program, StrExp,isPairExp,isLitExp,LitExp } from "./L5-ast";
 import { applyTEnv, makeEmptyTEnv, makeExtendTEnv, TEnv } from "./TEnv";
 import { isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeStrTExp, makeVoidTExp,
          parseTE, unparseTExp,
-         BoolTExp, NumTExp, StrTExp, TExp, VoidTExp } from "./TExp";
+         BoolTExp, NumTExp, StrTExp, TExp, VoidTExp,makePairTExp,makeEmptyTExp,makeSymbolTExp } from "./TExp";
 import { isEmpty, allT, first, rest, NonEmptyList, List, isNonEmptyList } from '../shared/list';
-import { Result, makeFailure, bind, makeOk, zipWithResult } from '../shared/result';
+import { Result, makeFailure, bind, makeOk, zipWithResult,isFailure } from '../shared/result';
 import { parse as p } from "../shared/parser";
 import { format } from '../shared/format';
+import { isCompoundSExp, isEmptySExp, isSymbolSExp, makeCompoundSExp, makeEmptySExp, makeSymbolSExp, SExpValue, valueToString } from './L5-value';
+
 
 // Purpose: Check that type expressions are equivalent
 // as part of a fully-annotated type check process of exp.
@@ -52,7 +54,12 @@ export const typeofExp = (exp: Parsed, tenv: TEnv): Result<TExp> =>
     isLetrecExp(exp) ? typeofLetrec(exp, tenv) :
     isDefineExp(exp) ? typeofDefine(exp, tenv) :
     isProgram(exp) ? typeofProgram(exp, tenv) :
-    // TODO: isSetExp(exp) isLitExp(exp)
+    isLitExp(exp) ? typeofLitExp(exp) :
+    isPairExp(exp) ? typeofPair(exp, tenv) :
+
+    
+
+    // TODO: isPairExp(exp) isLitExp(exp)
     makeFailure(`Unknown type: ${format(exp)}`);
 
 // Purpose: Compute the type of a sequence of expressions
@@ -102,6 +109,10 @@ export const typeofPrim = (p: PrimOp): Result<TExp> =>
     (p.op === 'string=?') ? parseTE('(T1 * T2 -> boolean)') :
     (p.op === 'display') ? parseTE('(T -> void)') :
     (p.op === 'newline') ? parseTE('(Empty -> void)') :
+    (p.op === 'cons') ? parseTE('(T1 * T2 -> (Pair T1 T2))') :
+    (p.op === 'car') ? parseTE('((Pair T1 T2) -> T1)') :
+    (p.op === 'cdr') ? parseTE('((Pair T1 T2) -> T2)') :
+
     makeFailure(`Primitive not yet implemented: ${p.op}`);
 
 // Purpose: compute the type of an if-exp
@@ -207,24 +218,64 @@ export const typeofLetrec = (exp: LetrecExp, tenv: TEnv): Result<TExp> => {
 
 // Typecheck a full program
 // TODO: Thread the TEnv (as in L1)
+export const typeofLitExp = (exp: LitExp): Result<TExp> => {
+    const val = exp.val;
+    if (typeof val === "number") return makeOk(makeNumTExp());
+    if (typeof val === "boolean") return makeOk(makeBoolTExp());
+    if (typeof val === "string") return makeOk(makeStrTExp());
+    if (isEmptySExp(val)) return makeOk(makeEmptyTExp()); // תוכל להגדיר טיפוס מתאים
+    if (isSymbolSExp(val)) return makeOk(makeSymbolTExp());
+    if (isCompoundSExp(val)) {
+        return bind(typeofLitExp({ tag: "LitExp", val: val.val1 }), (t1) =>
+            bind(typeofLitExp({ tag: "LitExp", val: val.val2 }), (t2) =>
+                makeOk(makePairTExp(t1, t2))));
+    }
+    return makeFailure("Unknown literal type");
+};
+
+export const typeofPair = (exp: AppExp, tenv: TEnv): Result<TExp> =>
+    (exp.rands.length === 2) ?
+        bind(typeofExp(exp.rands[0], tenv), (leftT: TExp) =>
+        bind(typeofExp(exp.rands[1], tenv), (rightT: TExp) =>
+            makeOk(makePairTExp(leftT, rightT)))) :
+        makeFailure(`'cons' expects exactly 2 arguments`);
 
 // Purpose: compute the type of a define
 // Typing rule:
 //   (define (var : texp) val)
 // TODO - write the true definition
 export const typeofDefine = (exp: DefineExp, tenv: TEnv): Result<VoidTExp> => {
-    // return Error("TODO");
-    const varTE = typeofExp(exp.var.texp,tenv);
-    const varName = exp.var.var;
-    const valTE = typeofExp(exp.val,tenv);
-    const constraint2 = bind(varTE, (varTE: TExp) =>
-                            bind(valTE, (valTE: TExp) =>
-                                checkEqualType(varTE, valTE, exp)));
-    return makeOk(makeVoidTExp());
+    // נבדוק את הטיפוס של הביטוי שמשוייך
+    const valTE = typeofExp(exp.val, tenv);
+
+    // נבדוק התאמה לטיפוס המוצהר במשתנה
+    return bind(valTE, (valT: TExp) =>
+        bind(checkEqualType(valT, exp.var.texp, exp), (_check: true) =>
+            makeOk(makeVoidTExp())));
 };
 
 // Purpose: compute the type of a program
 // Typing rule:
 // TODO - write the true definition
-export const typeofProgram = (exp: Program, tenv: TEnv): Result<TExp> =>
-    makeFailure("TODO");
+export const typeofProgram = (exp: Program, tenv: TEnv): Result<TExp> => {
+    let currentTEnv = tenv;
+    let lastResult: Result<TExp> = makeFailure("Empty program");
+
+    for (const expr of exp.exps) {
+        if (isDefineExp(expr)) {
+            const valType = typeofExp(expr.val, currentTEnv);
+            if (isFailure(valType)) {
+                return valType;
+            }
+            currentTEnv = makeExtendTEnv([expr.var.var], [expr.var.texp], currentTEnv);
+            lastResult = makeOk(makeVoidTExp());
+        } else {
+            lastResult = typeofExp(expr, currentTEnv);
+            if (isFailure(lastResult)) {
+                return lastResult;
+            }
+        }
+    }
+
+    return lastResult;
+};
