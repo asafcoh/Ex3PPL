@@ -4,7 +4,7 @@ import { equals, map, zipWith } from 'ramda';
 import { isAppExp, isBoolExp, isDefineExp, isIfExp, isLetrecExp, isLetExp, isNumExp,
          isPrimOp, isProcExp, isProgram, isStrExp, isVarRef, parseL5Exp, unparse,
          AppExp, BoolExp, DefineExp, Exp, IfExp, LetrecExp, LetExp, NumExp,
-         Parsed, PrimOp, ProcExp, Program, StrExp,isPairExp,isLitExp,LitExp } from "./L5-ast";
+         Parsed, PrimOp, ProcExp, Program, StrExp,isPairExp,isLitExp,LitExp,parseL5 } from "./L5-ast";
 import { applyTEnv, makeEmptyTEnv, makeExtendTEnv, TEnv } from "./TEnv";
 import { isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeStrTExp, makeVoidTExp,
          parseTE, unparseTExp,
@@ -38,6 +38,9 @@ export const L5typeof = (concreteExp: string): Result<string> =>
         bind(parseL5Exp(x), (e: Exp) => 
             bind(typeofExp(e, makeEmptyTEnv()), unparseTExp)));
 
+export const L5programTypeof = (concreteProgram: string): Result<string> =>
+    bind(parseL5(concreteProgram), (p) =>
+        bind(typeofProgram(p, makeEmptyTEnv()), unparseTExp));
 // Purpose: Compute the type of an expression
 // Traverse the AST and check the type according to the exp type.
 // We assume that all variables and procedures have been explicitly typed in the program.
@@ -279,3 +282,4 @@ export const typeofProgram = (exp: Program, tenv: TEnv): Result<TExp> => {
 
     return lastResult;
 };
+//L5programTypeof
