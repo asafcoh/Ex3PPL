@@ -1,83 +1,35 @@
-import { Result, makeOk, makeFailure, bind, isFailure, bindAll } from "./result";
-import { TExp } from "./TExp";
+/*
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Type Environment
+;; ================
+;; An environment represents a partial function from symbols (variable names) to type expressions.
+;; It supports the operation: applyTenv(tenv,var)
+;; which either returns the type of var in the type-environment, or else an error.
+;;
+;; TEnv is defined exactly as Env - except that we map vars to type-expressions (TExp) instead of values.
+;; * <tenv> ::= <empty-tenv> | <extended-tenv>
+;; * <empty-tenv> ::= empty-tenv()
+;; * <extended-tenv> ::= (tenv (symbol+) (type-exp+) enclosing-tenv) // env(vars:List(Symbol), tes:List(Type-exp), enclosing-tenv: TEnv)
+*/
 
-// טיפוסי TEnv קיימים
-export type TEnv = GlobalEnv | ExtEnv;
+import { TExp } from './TExp';
+import { Result, makeOk, makeFailure } from '../shared/result';
 
-export interface GlobalEnv {
-    tag: "GlobalEnv";
-    vars: string[];
-    exps: TExp[];
-}
+export type TEnv = EmptyTEnv | ExtendTEnv;
 
-export interface ExtEnv {
-    tag: "ExtEnv";
-    vars: string[];
-    exps: TExp[];
-    nextEnv: TEnv;
-}
+export type EmptyTEnv = { tag: "EmptyTEnv" }
+export const makeEmptyTEnv = (): EmptyTEnv => ({tag: "EmptyTEnv"});
+export const isEmptyTEnv = (x: any): x is EmptyTEnv => x.tag === "EmptyTEnv";
 
-// יצירת סביבה ריקה
+export type ExtendTEnv = { tag: "ExtendTEnv"; vars: string[]; texps: TExp[]; tenv: TEnv; }
+export const makeExtendTEnv = (vars: string[], texps: TExp[], tenv: TEnv): ExtendTEnv =>
+    ({tag: "ExtendTEnv", vars: vars, texps: texps, tenv: tenv});
+export const isExtendTEnv = (x: any): x is ExtendTEnv => x.tag === "ExtendTEnv";
 
-export const makeEmptyTEnv = (): GlobalEnv => ({
-    tag: "GlobalEnv",
-    vars: [
-        "+", "-", "*", "/", ">", "<", ">=", "<=", "=", "not", "eq?",
-        "number?", "boolean?", "string?", "symbol?", "list?", "pair?"
-    ],
-    exps: [
-        // Arithmetic operators
-        { tag: "ProcTExp", paramTEs: [{ tag: "NumTExp" }, { tag: "NumTExp" }], returnTE: { tag: "NumTExp" } },
-        { tag: "ProcTExp", paramTEs: [{ tag: "NumTExp" }, { tag: "NumTExp" }], returnTE: { tag: "NumTExp" } },
-        { tag: "ProcTExp", paramTEs: [{ tag: "NumTExp" }, { tag: "NumTExp" }], returnTE: { tag: "NumTExp" } },
-        { tag: "ProcTExp", paramTEs: [{ tag: "NumTExp" }, { tag: "NumTExp" }], returnTE: { tag: "NumTExp" } },
+export const applyTEnv = (tenv: TEnv, v: string): Result<TExp> =>
+    isEmptyTEnv(tenv) ? makeFailure(`Type Variable not found ${v}`) :
+    applyExtendTEnv(tenv.texps, tenv.tenv, v, tenv.vars.indexOf(v));
 
-        // Comparison operators
-        { tag: "ProcTExp", paramTEs: [{ tag: "NumTExp" }, { tag: "NumTExp" }], returnTE: { tag: "BoolTExp" } }, // >
-        { tag: "ProcTExp", paramTEs: [{ tag: "NumTExp" }, { tag: "NumTExp" }], returnTE: { tag: "BoolTExp" } }, // <
-        { tag: "ProcTExp", paramTEs: [{ tag: "NumTExp" }, { tag: "NumTExp" }], returnTE: { tag: "BoolTExp" } }, // >=
-        { tag: "ProcTExp", paramTEs: [{ tag: "NumTExp" }, { tag: "NumTExp" }], returnTE: { tag: "BoolTExp" } }, // <=
-        { tag: "ProcTExp", paramTEs: [{ tag: "NumTExp" }, { tag: "NumTExp" }], returnTE: { tag: "BoolTExp" } }, // =
-
-        // Logical operator
-        { tag: "ProcTExp", paramTEs: [{ tag: "BoolTExp" }], returnTE: { tag: "BoolTExp" } }, // not
-
-        // Equality
-        { tag: "ProcTExp", paramTEs: [{ tag: "LiteralTExp" }, { tag: "LiteralTExp" }], returnTE: { tag: "BoolTExp" } }, // eq?
-
-        // Type predicates
-        { tag: "ProcTExp", paramTEs: [{ tag: "LiteralTExp" }], returnTE: { tag: "BoolTExp" } }, // number?
-        { tag: "ProcTExp", paramTEs: [{ tag: "LiteralTExp" }], returnTE: { tag: "BoolTExp" } }, // boolean?
-        { tag: "ProcTExp", paramTEs: [{ tag: "LiteralTExp" }], returnTE: { tag: "BoolTExp" } }, // string?
-        { tag: "ProcTExp", paramTEs: [{ tag: "LiteralTExp" }], returnTE: { tag: "BoolTExp" } }, // symbol?
-        { tag: "ProcTExp", paramTEs: [{ tag: "LiteralTExp" }], returnTE: { tag: "BoolTExp" } }, // list?
-        { tag: "ProcTExp", paramTEs: [{ tag: "LiteralTExp" }], returnTE: { tag: "BoolTExp" } }, // pair?
-    ]
-});
-
-
-// פונקציית עזר – החלה של סביבה על משתנה
-export const applyTEnv = (tenv: TEnv, v: string): Result<TExp> => {
-    if (tenv.tag === "GlobalEnv") {
-        const pos = tenv.vars.indexOf(v);
-        return pos >= 0 ? makeOk(tenv.exps[pos]) : makeFailure(`Variable ${v} not found`);
-    } else {
-        const pos = tenv.vars.indexOf(v);
-        return pos >= 0
-            ? makeOk(tenv.exps[pos])
-            : applyTEnv(tenv.nextEnv, v);
-    }
-};
-
-// יצירת סביבה חדשה על בסיס קיימת
-export const makeExtendTEnv = (vars: string[], exps: TExp[], nextEnv: TEnv): ExtEnv => ({
-    tag: "ExtEnv",
-    vars,
-    exps,
-    nextEnv
-});
-
-// הרחבת סביבה עם משתנה יחיד
-export const extendTEnv = (tenv: TEnv, v: string, t: TExp): TEnv =>
-    makeExtendTEnv([v], [t], tenv);
-
+export const applyExtendTEnv = (texps: TExp[], tenv: TEnv, v: string, pos: number): Result<TExp> =>
+    (pos === -1) ? applyTEnv(tenv, v) :
+    makeOk(texps[pos]);
