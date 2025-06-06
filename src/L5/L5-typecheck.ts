@@ -214,6 +214,12 @@ export const typeofLetrec = (exp: LetrecExp, tenv: TEnv): Result<TExp> => {
 // TODO - write the true definition
 export const typeofDefine = (exp: DefineExp, tenv: TEnv): Result<VoidTExp> => {
     // return Error("TODO");
+    const varTE = typeofExp(exp.var.texp,tenv);
+    const varName = exp.var.var;
+    const valTE = typeofExp(exp.val,tenv);
+    const constraint2 = bind(varTE, (varTE: TExp) =>
+                            bind(valTE, (valTE: TExp) =>
+                                checkEqualType(varTE, valTE, exp)));
     return makeOk(makeVoidTExp());
 };
 
