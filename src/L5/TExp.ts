@@ -39,7 +39,7 @@ import { Result, bind, makeOk, makeFailure, mapResult, mapv } from "../shared/re
 import { parse as p } from "../shared/parser";
 import { format } from "../shared/format";
 
-export type TExp =  AtomicTExp | CompoundTExp | TVar;
+export type TExp =  AtomicTExp | CompoundTExp | TVar | LiteralTExp;
 export const isTExp = (x: any): x is TExp => isAtomicTExp(x) || isCompoundTExp(x) || isTVar(x);
 
 export type AtomicTExp = NumTExp | BoolTExp | StrTExp | VoidTExp | SymbolTExp | EmptyTExp;
@@ -115,6 +115,10 @@ export const isPairTExp = (x: any): x is PairTExp =>
 export const isSymbolTExp = (x: any): x is SymbolTExp => x.tag === "SymbolTExp";
 export type SymbolTExp = { tag: "SymbolTExp" };
 export const makeSymbolTExp = (): SymbolTExp => ({ tag: "SymbolTExp" });
+
+export type LiteralTExp = { tag: "LiteralTExp" };
+export const makeLiteralTExp = (): LiteralTExp => ({ tag: "LiteralTExp" });
+export const isLiteralTExp = (x: any): x is LiteralTExp => x.tag === "LiteralTExp";
 
 export type EmptyTExp = { tag: "EmptyTExp" };
 export const makeEmptyTExp = (): EmptyTExp => ({ tag: "EmptyTExp" });
@@ -243,6 +247,7 @@ export const unparseTExp = (te: TExp): Result<string> => {
             isNonEmptyTupleTExp(x) ? unparseTuple(x.TEs) :
             isSymbolTExp(x) ? makeOk("symbol") :
             isEmptyTExp(x) ? makeOk("Empty") :
+            isLiteralTExp(x) ? makeOk("literal") :
             x === undefined ? makeFailure("Undefined TVar") :
             x;
         

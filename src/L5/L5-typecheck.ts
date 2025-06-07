@@ -8,7 +8,7 @@ import { isAppExp, isBoolExp, isDefineExp, isIfExp, isLetrecExp, isLetExp, isNum
 import { applyTEnv, makeEmptyTEnv, makeExtendTEnv, TEnv } from "./TEnv";
 import { isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeStrTExp, makeVoidTExp,
          parseTE, unparseTExp,
-         BoolTExp, NumTExp, StrTExp, TExp, VoidTExp,makePairTExp,makeEmptyTExp,makeSymbolTExp } from "./TExp";
+         BoolTExp, NumTExp, StrTExp, TExp, VoidTExp,makePairTExp,makeEmptyTExp,makeSymbolTExp,LiteralTExp ,makeLiteralTExp} from "./TExp";
 import { isEmpty, allT, first, rest, NonEmptyList, List, isNonEmptyList } from '../shared/list';
 import { Result, makeFailure, bind, makeOk, zipWithResult,isFailure } from '../shared/result';
 import { parse as p } from "../shared/parser";
@@ -58,7 +58,7 @@ export const typeofExp = (exp: Parsed, tenv: TEnv): Result<TExp> =>
     isDefineExp(exp) ? typeofDefine(exp, tenv) :
     isProgram(exp) ? typeofProgram(exp, tenv) :
     isLitExp(exp) ? typeofLitExp(exp) :
-    isPairExp(exp) ? typeofPair(exp, tenv) :
+    // isPairExp(exp) ? typeofPair(exp, tenv) :
 
     
 
@@ -157,21 +157,62 @@ export const typeofProc = (proc: ProcExp, tenv: TEnv): Result<TExp> => {
 //      type<randn>(tenv) = tn
 // then type<(rator rand1...randn)>(tenv) = t
 // We also check the correct number of arguments is passed.
-export const typeofApp = (app: AppExp, tenv: TEnv): Result<TExp> =>
-    bind(typeofExp(app.rator, tenv), (ratorTE: TExp) => {
-        if (! isProcTExp(ratorTE)) {
+export const typeofApp = (app: AppExp, tenv: TEnv): Result<TExp> => {
+    // Special case: cons
+    if (isPrimOp(app.rator) && app.rator.op === "cons" && app.rands.length === 2) {
+        return bind(typeofExp(app.rands[0], tenv), (leftT: TExp) =>
+            bind(typeofExp(app.rands[1], tenv), (rightT: TExp) =>
+                makeOk(makePairTExp(leftT, rightT))));
+    }
+
+    // Special case: car
+    if (isPrimOp(app.rator) && app.rator.op === "car" && app.rands.length === 1) {
+        return bind(typeofExp(app.rands[0], tenv), (argT: TExp) => {
+            if (argT.tag === "PairTExp") {
+                return makeOk(argT.leftTE);
+            } else {
+                return makeFailure(`car expected a pair but got ${argT.tag}`);
+            }
+        });
+    }
+
+    // Special case: cdr
+    if (isPrimOp(app.rator) && app.rator.op === "cdr" && app.rands.length === 1) {
+        return bind(typeofExp(app.rands[0], tenv), (argT: TExp) => {
+            if (argT.tag === "PairTExp") {
+                return makeOk(argT.rightTE);
+            } else {
+                return makeFailure(`cdr expected a pair but got ${argT.tag}`);
+            }
+        });
+    }
+
+    // Regular function application
+    return bind(typeofExp(app.rator, tenv), (ratorTE: TExp) => {
+        if (!isProcTExp(ratorTE)) {
             return bind(unparseTExp(ratorTE), (rator: string) =>
-                        bind(unparse(app), (exp: string) =>
-                            makeFailure<TExp>(`Application of non-procedure: ${rator} in ${exp}`)));
+                bind(unparse(app), (exp: string) =>
+                    makeFailure<TExp>(`Application of non-procedure: ${rator} in ${exp}`)));
         }
+
         if (app.rands.length !== ratorTE.paramTEs.length) {
-            return bind(unparse(app), (exp: string) => makeFailure<TExp>(`Wrong parameter numbers passed to proc: ${exp}`));
+            return bind(unparse(app), (exp: string) =>
+                makeFailure<TExp>(`Wrong parameter numbers passed to proc: ${exp}`));
         }
-        const constraints = zipWithResult((rand, trand) => bind(typeofExp(rand, tenv), (typeOfRand: TExp) => 
-                                                                checkEqualType(typeOfRand, trand, app)),
-                                          app.rands, ratorTE.paramTEs);
+
+        const constraints = zipWithResult(
+            (rand, trand) =>
+                bind(typeofExp(rand, tenv), (typeOfRand: TExp) =>
+                    checkEqualType(typeOfRand, trand, app)),
+            app.rands,
+            ratorTE.paramTEs
+        );
+
         return bind(constraints, _ => makeOk(ratorTE.returnTE));
     });
+};
+
+
 
 // Purpose: compute the type of a let-exp
 // Typing rule:
@@ -221,27 +262,48 @@ export const typeofLetrec = (exp: LetrecExp, tenv: TEnv): Result<TExp> => {
 
 // Typecheck a full program
 // TODO: Thread the TEnv (as in L1)
+// export const typeofLitExp = (exp: LitExp): Result<TExp> => {
+//     const val = exp.val;
+//     if (typeof val === "number") return makeOk(makeNumTExp());
+//     if (typeof val === "boolean") return makeOk(makeBoolTExp());
+//     if (typeof val === "string") return makeOk(makeStrTExp());
+//     if (isEmptySExp(val)) return makeOk(makeEmptyTExp()); // תוכל להגדיר טיפוס מתאים
+//     if (isSymbolSExp(val)) return makeOk(makeSymbolTExp());
+//     if (isCompoundSExp(val)) {
+//         return bind(typeofLitExp({ tag: "LitExp", val: val.val1 }), (t1) =>
+//             bind(typeofLitExp({ tag: "LitExp", val: val.val2 }), (t2) =>
+//                 makeOk(makePairTExp(t1, t2))));
+//     }
+//     return makeFailure("Unknown literal type");
+// };
 export const typeofLitExp = (exp: LitExp): Result<TExp> => {
     const val = exp.val;
-    if (typeof val === "number") return makeOk(makeNumTExp());
-    if (typeof val === "boolean") return makeOk(makeBoolTExp());
-    if (typeof val === "string") return makeOk(makeStrTExp());
-    if (isEmptySExp(val)) return makeOk(makeEmptyTExp()); // תוכל להגדיר טיפוס מתאים
-    if (isSymbolSExp(val)) return makeOk(makeSymbolTExp());
+
+    const fix = (v: SExpValue): TExp =>
+        (typeof v === "number") ? makeNumTExp() :
+        (typeof v === "boolean") ? makeBoolTExp() :
+        (typeof v === "string") ? makeStrTExp() :
+        (isCompoundSExp(v)) ? makeLiteralTExp() :  // זוגות נטפלים בנפרד
+        makeLiteralTExp(); // כל דבר אחר כולל symbol, emptySExp, וכו'
+
     if (isCompoundSExp(val)) {
-        return bind(typeofLitExp({ tag: "LitExp", val: val.val1 }), (t1) =>
-            bind(typeofLitExp({ tag: "LitExp", val: val.val2 }), (t2) =>
-                makeOk(makePairTExp(t1, t2))));
+        const t1 = fix(val.val1);
+        const t2 = fix(val.val2);
+        return makeOk(makePairTExp(t1, t2));
     }
-    return makeFailure("Unknown literal type");
+
+    return makeOk(makeLiteralTExp());
 };
 
-export const typeofPair = (exp: AppExp, tenv: TEnv): Result<TExp> =>
-    (exp.rands.length === 2) ?
-        bind(typeofExp(exp.rands[0], tenv), (leftT: TExp) =>
-        bind(typeofExp(exp.rands[1], tenv), (rightT: TExp) =>
-            makeOk(makePairTExp(leftT, rightT)))) :
-        makeFailure(`'cons' expects exactly 2 arguments`);
+
+// export const typeofPair = (exp: AppExp, tenv: TEnv): Result<TExp> =>
+//     (exp.rands.length === 2) ?
+//         bind(typeofExp(exp.rands[0], tenv), (leftT: TExp) =>
+//         bind(typeofExp(exp.rands[1], tenv), (rightT: TExp) =>
+//             makeOk(makePairTExp(leftT, rightT)))) :
+//         makeFailure(`'cons' expects exactly 2 arguments`);
+
+
 
 // Purpose: compute the type of a define
 // Typing rule:
